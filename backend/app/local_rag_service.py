@@ -1247,10 +1247,11 @@ class LocalRAGService:
                         best_payload = payload
                         best_score = score
             if best_payload and best_score >= FAST_RAG_CACHE_MATCH_THRESHOLD:
-                raw_english = str(best_payload.get("raw_english", "")).strip() or str(best_payload.get("remodeled_english", "")).strip()
-                remodeled_english = str(best_payload.get("remodeled_english", "")).strip() or raw_english
-                tamil_text = str(best_payload.get("tamil_text", "")).strip()
-                theni_tamil_text = str(best_payload.get("theni_tamil_text", "")).strip() or tamil_text
+                cache_data = best_payload.get("pipeline") if isinstance(best_payload.get("pipeline"), dict) else best_payload
+                raw_english = str(cache_data.get("raw_english", "")).strip() or str(cache_data.get("remodeled_english", "")).strip()
+                remodeled_english = str(cache_data.get("remodeled_english", "")).strip() or raw_english
+                tamil_text = str(cache_data.get("tamil_text", "")).strip()
+                theni_tamil_text = str(cache_data.get("theni_tamil_text", "")).strip() or tamil_text
                 return self._build_pipeline_result(
                     raw_english=raw_english,
                     remodeled_english=remodeled_english,
@@ -1259,14 +1260,14 @@ class LocalRAGService:
                     route_taken="cached_answer",
                     direct_answer_source="qa_cache",
                     direct_answer_confidence=f"{best_score:.4f}",
-                    predicted_label=str(best_payload.get("predicted_label", "cached")).strip() or "cached",
-                    risk_level=str(best_payload.get("risk_level", "low")).strip() or "low",
+                    predicted_label=str(cache_data.get("predicted_label", "cached")).strip() or "cached",
+                    risk_level=str(cache_data.get("risk_level", "low")).strip() or "low",
                     stage_notes=["Reused a cached answer and skipped a new OpenAI call."],
-                    core_meta=best_payload.get("core_meta") if isinstance(best_payload.get("core_meta"), dict) else {},
-                    remodel_meta=best_payload.get("remodel_meta") if isinstance(best_payload.get("remodel_meta"), dict) else {},
-                    review_meta=best_payload.get("review_meta") if isinstance(best_payload.get("review_meta"), dict) else {},
-                    translation_meta=best_payload.get("translation_meta") if isinstance(best_payload.get("translation_meta"), dict) else {},
-                    timings_ms=best_payload.get("timings_ms") if isinstance(best_payload.get("timings_ms"), dict) else {"total_ms": 0.0},
+                    core_meta=cache_data.get("core_meta") if isinstance(cache_data.get("core_meta"), dict) else {},
+                    remodel_meta=cache_data.get("remodel_meta") if isinstance(cache_data.get("remodel_meta"), dict) else {},
+                    review_meta=cache_data.get("review_meta") if isinstance(cache_data.get("review_meta"), dict) else {},
+                    translation_meta=cache_data.get("translation_meta") if isinstance(cache_data.get("translation_meta"), dict) else {},
+                    timings_ms=cache_data.get("timings_ms") if isinstance(cache_data.get("timings_ms"), dict) else {"total_ms": 0.0},
                     cache_hit="true",
                 )
 
