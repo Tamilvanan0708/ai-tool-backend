@@ -515,7 +515,7 @@ export default function Home() {
         return;
       }
       setPlayingTts(true);
-      const url = `http://192.168.31.206:9010/tts?text=${encodeURIComponent(resultText)}`;
+      const url = `https://tamil78-tamil-tts-api.hf.space/tts?text=${encodeURIComponent(resultText)}`;
       const { sound } = await Audio.Sound.createAsync(
         { uri: url },
         { shouldPlay: true }
