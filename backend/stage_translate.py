@@ -427,19 +427,25 @@ Task:
         if not self._looks_like_valid_tamil_output(tamil_text):
             return tamil_text
 
-        remote_output = self._convert_via_space_api(self._tamil_to_theni_url, tamil_text)
-        if remote_output:
-            return remote_output
+        chunks = self._split_into_chunks(tamil_text, chunk_size=200)
+        theni_chunks = []
 
-        if self._ensure_tamil_to_theni_model():
-            try:
-                generated = self._cleanup_tamil(self._generate(tamil_text, self._model))
-                if self._looks_like_valid_tamil_output(generated):
-                    return generated
-            except Exception:
-                self._clear_memory()
+        for chunk in chunks:
+            out_chunk = ""
+            remote_output = self._convert_via_space_api(self._tamil_to_theni_url, chunk)
+            if remote_output:
+                out_chunk = remote_output
+            else:
+                if self._ensure_tamil_to_theni_model():
+                    try:
+                        generated = self._cleanup_tamil(self._generate(chunk, self._model))
+                        if self._looks_like_valid_tamil_output(generated):
+                            out_chunk = generated
+                    except Exception:
+                        self._clear_memory()
+            theni_chunks.append(out_chunk or chunk)
 
-        return tamil_text
+        return self._cleanup_tamil(" ".join(theni_chunks))
 
     def thenitamil_to_tamil(self, theni_tamil_text: str) -> str:
         theni_tamil_text = self._cleanup_tamil(theni_tamil_text)

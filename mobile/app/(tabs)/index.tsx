@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -174,8 +174,6 @@ export default function Home() {
 
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
   const [lastPrompt, setLastPrompt] = useState("");
-  const [playingTts, setPlayingTts] = useState(false);
-  const [ttsSound, setTtsSound] = useState<Audio.Sound | null>(null);
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingReminder, setPendingReminder] =
@@ -185,6 +183,10 @@ export default function Home() {
   const [historySearch, setHistorySearch] = useState("");
   const [historyItems, setHistoryItems] = useState<Item[]>([]);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  const recordingPhaseRef = useRef<"idle" | "starting" | "recording" | "stopping">("idle");
+  const stopWhenReadyRef = useRef(false);
+  const recordingSourceRef = useRef<"orb" | "button" | null>(null);
 
   const isSmallPhone = width < 370 || height < 760;
   const isVerySmallPhone = width < 345 || height < 700;
@@ -216,9 +218,8 @@ export default function Home() {
     if (!query) return historyItems.slice(0, 24);
 
     return historyItems.filter((item) => {
-      const blob = `${item.title || ""} ${item.details || ""} ${
-        item.raw_text || ""
-      } ${item.intent || ""}`.toLowerCase();
+      const blob = `${item.title || ""} ${item.details || ""} ${item.raw_text || ""
+        } ${item.intent || ""}`.toLowerCase();
       return blob.includes(query);
     });
   }, [historyItems, historySearch]);
@@ -248,7 +249,7 @@ export default function Home() {
   const resultText = result?.details || result?.raw_text || "";
   const hasConversation = Boolean(lastPrompt || resultText || busy);
   const placeholder = listening
-    ? "Listening... tap stop when you're done"
+    ? "Listening... release the globe or tap stop when you're done"
     : `Message ${assistantLabel}`;
 
   useEffect(() => {
@@ -303,10 +304,6 @@ export default function Home() {
   }
 
   async function analyzeText() {
-    if (playingTts && ttsSound) {
-      await ttsSound.stopAsync();
-      setPlayingTts(false);
-    }
     if (!text.trim() || busy) return;
 
     try {
@@ -344,17 +341,21 @@ export default function Home() {
     }
   }
 
-  async function startRecording() {
-    if (playingTts && ttsSound) {
-      await ttsSound.stopAsync();
-      setPlayingTts(false);
-    }
+  async function startRecording(source: "orb" | "button" = "button") {
+    if (busy || recordingPhaseRef.current !== "idle") return;
+
     try {
+      recordingPhaseRef.current = "starting";
+      recordingSourceRef.current = source;
+      stopWhenReadyRef.current = false;
+
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setListening(true);
 
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
+        recordingPhaseRef.current = "idle";
+        recordingSourceRef.current = null;
         setListening(false);
         Alert.alert("Mic permission needed", "Please allow microphone access.");
         return;
@@ -371,24 +372,46 @@ export default function Home() {
       );
       await nextRecording.startAsync();
       setRecording(nextRecording);
+      recordingPhaseRef.current = "recording";
+
+      if (stopWhenReadyRef.current) {
+        stopWhenReadyRef.current = false;
+        await stopAndAnalyze();
+      }
     } catch (error: any) {
+      recordingPhaseRef.current = "idle";
+      recordingSourceRef.current = null;
+      stopWhenReadyRef.current = false;
+      setRecording(null);
       setListening(false);
       Alert.alert("Error", error?.message || "Could not start recording.");
     }
   }
 
   async function stopAndAnalyze() {
-    if (!recording) return;
+    if (recordingPhaseRef.current === "starting") {
+      stopWhenReadyRef.current = true;
+      return;
+    }
+
+    if (!recording || recordingPhaseRef.current !== "recording") {
+      return;
+    }
+
+    const activeRecording = recording;
 
     try {
+      recordingPhaseRef.current = "stopping";
+      stopWhenReadyRef.current = false;
       setBusy(true);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      await recording.stopAndUnloadAsync();
-      const uri = recording.getURI();
-
       setRecording(null);
       setListening(false);
+      recordingSourceRef.current = null;
+
+      await activeRecording.stopAndUnloadAsync();
+      const uri = activeRecording.getURI();
 
       if (!uri) {
         throw new Error("No audio file URI");
@@ -405,8 +428,7 @@ export default function Home() {
       );
 
       const res = await apiPostForm<AnalyzeResponse>(
-        `/transcribe-and-analyze?user_id=${
-          profile?.userId ?? ""
+        `/transcribe-and-analyze?user_id=${profile?.userId ?? ""
         }&reply_language=${settings.languageMode}`,
         form
       );
@@ -429,17 +451,39 @@ export default function Home() {
     } catch (error: any) {
       Alert.alert("Error", error?.message || "Voice analysis failed.");
     } finally {
+      recordingPhaseRef.current = "idle";
+      recordingSourceRef.current = null;
+      stopWhenReadyRef.current = false;
+      setRecording(null);
+      setListening(false);
       setBusy(false);
     }
   }
 
   async function toggleMic() {
-    if (recording) {
+    if (
+      recordingPhaseRef.current === "starting" ||
+      recordingPhaseRef.current === "recording"
+    ) {
       await stopAndAnalyze();
       return;
     }
 
-    await startRecording();
+    await startRecording("button");
+  }
+
+  async function handleOrbPressIn() {
+    if (busy || recordingPhaseRef.current !== "idle") return;
+    await startRecording("orb");
+  }
+
+  async function handleOrbPressOut() {
+    if (
+      recordingSourceRef.current === "orb" ||
+      recordingPhaseRef.current === "starting"
+    ) {
+      await stopAndAnalyze();
+    }
   }
 
   async function confirmScheduleReminder() {
@@ -497,39 +541,9 @@ export default function Home() {
   }
 
   function clearConversation() {
-    if (playingTts && ttsSound) {
-      ttsSound.stopAsync();
-      setPlayingTts(false);
-    }
     setResult(null);
     setLastPrompt("");
     setText("");
-  }
-
-  async function playTts() {
-    if (!resultText) return;
-    try {
-      if (playingTts && ttsSound) {
-        await ttsSound.stopAsync();
-        setPlayingTts(false);
-        return;
-      }
-      setPlayingTts(true);
-      const url = `https://tamil78-tamil-tts-api.hf.space/tts?text=${encodeURIComponent(resultText)}`;
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: url },
-        { shouldPlay: true }
-      );
-      setTtsSound(sound);
-      sound.setOnPlaybackStatusUpdate((status: any) => {
-        if (status.didJustFinish) {
-          setPlayingTts(false);
-        }
-      });
-    } catch (error) {
-      console.error("TTS playback error", error);
-      setPlayingTts(false);
-    }
   }
 
   function openHistoryItem(item: Item) {
@@ -669,7 +683,12 @@ export default function Home() {
 
             <View style={styles.orbShell}>
               <View style={styles.orbAmbientGlow} />
-              <Orb listening={listening} onPress={toggleMic} size={orbSize} />
+              <Orb
+                listening={listening}
+                onPressIn={handleOrbPressIn}
+                onPressOut={handleOrbPressOut}
+                size={orbSize}
+              />
             </View>
 
             {listening ? (
@@ -739,7 +758,7 @@ export default function Home() {
                   />
                   <Text style={styles.composerHintText}>
                     {listening
-                      ? "Listening... tap stop when finished"
+                      ? "Listening... release the globe or tap stop when finished"
                       : "Try natural prompts like “remind me tomorrow at 9”"}
                   </Text>
                 </View>
@@ -826,31 +845,12 @@ export default function Home() {
                     </Text>
                   </View>
 
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    {resultText ? (
-                      <Pressable 
-                        onPress={playTts}
-                        style={({pressed}) => [
-                          styles.responseBadge, 
-                          { backgroundColor: playingTts ? Brand.bronze : "white" },
-                          pressed && { opacity: 0.7 }
-                        ]}
-                      >
-                        <Ionicons
-                          name={playingTts ? "stop" : "volume-medium"}
-                          size={16}
-                          color={playingTts ? "white" : Brand.bronze}
-                        />
-                      </Pressable>
-                    ) : null}
-                    
-                    <View style={styles.responseBadge}>
-                      <Ionicons
-                        name="sparkles"
-                        size={14}
-                        color={Brand.bronze}
-                      />
-                    </View>
+                  <View style={styles.responseBadge}>
+                    <Ionicons
+                      name="sparkles"
+                      size={14}
+                      color={Brand.bronze}
+                    />
                   </View>
                 </View>
 

@@ -221,3 +221,13 @@ THENI_TAMIL_API_TIMEOUT=90
 ENABLE_LOCAL_DIALECT_MODEL=false
 TAMIL_TO_THENI_MODEL_ROOT=./models/stage_tamil_thenitamil_model
 uvicorn theni_tamil_api:app --host 0.0.0.0 --port 8010
+
+
+how to build apk:
+
+cd /d/ai_tool-main
+export USER=$USERNAME
+export ANDROID_HOME="/c/Users/$USERNAME/AppData/Local/Android/Sdk"
+export API_BASE_URL="https://ai-tool-backend-rwnq.onrender.com"
+
+BUILD_TYPE=release bash build-apk.sh
