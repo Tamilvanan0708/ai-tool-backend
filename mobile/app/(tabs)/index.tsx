@@ -845,12 +845,35 @@ export default function Home() {
                     </Text>
                   </View>
 
-                  <View style={styles.responseBadge}>
-                    <Ionicons
-                      name="sparkles"
-                      size={14}
-                      color={Brand.bronze}
-                    />
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    {resultText ? (
+                      <Pressable 
+                        onPress={playTts}
+                        style={({pressed}) => [
+                          styles.responseBadge, 
+                          { backgroundColor: playingTts ? Brand.bronze : "white" },
+                          pressed && { opacity: 0.7 }
+                        ]}
+                      >
+                        {loadingTts ? (
+                          <ActivityIndicator size="small" color={Brand.bronze} style={{ transform: [{ scale: 0.8 }] }} />
+                        ) : (
+                          <Ionicons
+                            name={playingTts ? "stop" : "volume-medium"}
+                            size={16}
+                            color={playingTts ? "white" : Brand.bronze}
+                          />
+                        )}
+                      </Pressable>
+                    ) : null}
+                    
+                    <View style={styles.responseBadge}>
+                      <Ionicons
+                        name="sparkles"
+                        size={14}
+                        color={Brand.bronze}
+                      />
+                    </View>
                   </View>
                 </View>
 
